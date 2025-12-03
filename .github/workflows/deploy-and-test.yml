@@ -1,6 +1,6 @@
 name: Deploy and Test on kind
 
-# Trigger manually or after Trivy scan workflow completes successfully
+# Trigger manually or after Trivy Remote Scan completes
 on:
   workflow_dispatch:
   workflow_run:
@@ -34,32 +34,37 @@ jobs:
         with:
           version: latest
 
-      # 5. Pull and preload Docker image into kind
+      # 5. Load Docker image into kind
       - name: Load Docker image into kind
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
 
-      # 6. Deploy app (use replicas as defined in deployment.yaml)
+      # 6. Adjust deployment replicas for CI/CD (optional)
+      - name: Set replicas to 1 for CI/CD
+        run: |
+          kubectl scale deployment gpt-huggingface --replicas=1 || true
+
+      # 7. Deploy app
       - name: Deploy app to kind
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-      # 7. Wait for pods to be ready
+      # 8. Wait for pods to be ready
       - name: Wait for pod readiness
         run: |
-          kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=180s
+          kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=300s
 
-      # 8. Port-forward with polling and API test
+      # 9. Port-forward and test API
       - name: Port-forward and test API
         run: |
-          # Start port-forward in the background
+          # Start port-forward in background
           kubectl port-forward svc/gpt-hf-service 8000:8000 &
           PF_PID=$!
           echo "Port-forward PID: $PF_PID"
-          
-          # Wait until the service responds (timeout ~60s)
+
+          # Wait until service responds
           echo "Waiting for FastAPI service..."
           for i in {1..30}; do
             if curl -s http://localhost:8000/ > /dev/null; then
@@ -69,27 +74,34 @@ jobs:
             echo "Still waiting..."
             sleep 2
           done
-          
-          # Test API endpoint with both question and answer
+
+          # Test API endpoint with question + answer
           curl --fail -X POST http://localhost:8000/chat \
             -H "Content-Type: application/json" \
             -d '{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'
-          
-          # Kill port-forward
-          kill $PF_PID 
 
-      # 9. Install kube-score
+          # Kill port-forward
+          kill $PF_PID
+
+      # 10. Install kube-score
       - name: Install kube-score
         run: |
           curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
           tar -xzf kube-score.tar.gz kube-score
           sudo mv kube-score /usr/local/bin/
 
-      # 10. Run kube-score
+      # 11. Run kube-score
       - name: Run kube-score
         run: kube-score score --output-format ci deployment.yaml
 
-      # 11. Cleanup kind cluster (optional)
+      # 12. Cleanup kind cluster (optional)
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci
+
+      # 13. Debug pod logs if failure
+      - name: Show pod logs on failure
+        if: failure()
+        run: |
+          kubectl get pods
+          kubectl logs -l app=gpt-hf-pod
