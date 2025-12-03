@@ -9,7 +9,11 @@ WORKDIR /app
 # Copy only requirements.txt first to leverage Docker cache
 COPY requirements.txt .
 
-# Install dependencies into /install to separate build from runtime
+# Install torch CPU-only first
+RUN pip install --no-cache-dir torch==2.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html --prefix=/install
+
+# Then install the rest of the requirements
+COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Copy application code
