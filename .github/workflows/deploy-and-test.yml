@@ -34,24 +34,31 @@ jobs:
         with:
           version: latest
 
-      # 5. Deploy app (remote image from Docker Hub)
+      # 5. Pull and preload Docker image into kind
+      - name: Load Docker image into kind
+        run: |
+          docker pull xusonglin/fastapi-app:latest
+          kind load docker-image xusonglin/fastapi-app:latest --name github-ci
+
+      # 6. Deploy app (use replicas as defined in deployment.yaml)
       - name: Deploy app to kind
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-      # 6. Wait for deployment rollout
-      - name: Wait for rollout
-        run: kubectl rollout status deployment/gpt-huggingface --timeout=180s
+      # 7. Wait for pods to be ready
+      - name: Wait for pod readiness
+        run: |
+          kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=180s
 
-      # 7. Port-forward with polling and API test
+      # 8. Port-forward with polling and API test
       - name: Port-forward and test API
         run: |
           # Start port-forward in the background
           kubectl port-forward svc/gpt-hf-service 8000:8000 &
           PF_PID=$!
           echo "Port-forward PID: $PF_PID"
-
+          
           # Wait until the service responds (timeout ~60s)
           echo "Waiting for FastAPI service..."
           for i in {1..30}; do
@@ -62,27 +69,27 @@ jobs:
             echo "Still waiting..."
             sleep 2
           done
-
-          # Test API endpoint
+          
+          # Test API endpoint with both question and answer
           curl --fail -X POST http://localhost:8000/chat \
             -H "Content-Type: application/json" \
-            -d '{"question": "What does Hugging Face provide?"}'
-
+            -d '{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'
+          
           # Kill port-forward
-          kill $PF_PID
+          kill $PF_PID 
 
-      # 8. Install kube-score
+      # 9. Install kube-score
       - name: Install kube-score
         run: |
           curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
           tar -xzf kube-score.tar.gz kube-score
           sudo mv kube-score /usr/local/bin/
 
-      # 9. Run kube-score
+      # 10. Run kube-score
       - name: Run kube-score
         run: kube-score score --output-format ci deployment.yaml
 
-      # 10. Cleanup kind cluster (optional, avoids leftover resources)
+      # 11. Cleanup kind cluster (optional)
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci

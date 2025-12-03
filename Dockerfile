@@ -1,21 +1,28 @@
-# Stage 1: Build
+# -----------------------------
+# Stage 1: Builder
+# -----------------------------
 FROM python:3.11-slim AS builder
+
+# Set working directory
 WORKDIR /app
 
+# Copy only requirements.txt first to leverage Docker cache
 COPY requirements.txt .
+
+# Install dependencies into /install to separate build from runtime
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
+# Copy application code
 COPY . .
 
+# -----------------------------
 # Stage 2: Runtime
-FROM python:3.11-slim
+# -----------------------------
+FROM gcr.io/distroless/python3:nonroot
+
 WORKDIR /app
 
-# Copy installed packages from builder
 COPY --from=builder /install /usr/local
 COPY --from=builder /app /app
 
-EXPOSE 8000
-
-ENTRYPOINT ["python"]
 CMD ["day02.py"]
