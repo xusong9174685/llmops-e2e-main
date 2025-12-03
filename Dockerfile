@@ -1,21 +1,21 @@
-# Use the official Python image from the Docker Hub
-FROM python:3.9-slim
-
-# Set the working directory in the container
+# Stage 1: Build
+FROM python:3.11-slim AS builder
 WORKDIR /app
 
-# Copy only the requirements file to leverage Docker cache
 COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Install the dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code to the working directory
 COPY . .
 
-# Expose port 8000
+# Stage 2: Runtime
+FROM python:3.11-slim
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+COPY --from=builder /app /app
+
 EXPOSE 8000
 
-# Use a minimal entrypoint and CMD
 ENTRYPOINT ["python"]
 CMD ["day02.py"]
