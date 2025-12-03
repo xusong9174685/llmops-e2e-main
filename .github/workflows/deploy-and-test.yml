@@ -38,7 +38,7 @@ jobs:
       - name: Deploy app to kind
         run: |
           kubectl apply -f deployment.yaml
-          kubectl apply -f services.yml
+          kubectl apply -f service.yaml
 
       # 6. Wait for deployment rollout
       - name: Wait for rollout
