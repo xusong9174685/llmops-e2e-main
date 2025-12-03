@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: gpt-huggingface
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: gpt-hf-pod

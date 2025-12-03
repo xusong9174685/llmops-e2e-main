@@ -28,22 +28,21 @@ jobs:
       - name: Start kind cluster
         run: kind create cluster --name github-ci
 
-      # 4. Install kubectl
+      # 4. Set KUBECONFIG for kubectl
+      - name: Set kubeconfig
+        run: echo "KUBECONFIG=$(kind get kubeconfig-path --name='github-ci')" >> $GITHUB_ENV
+
+      # 5. Install kubectl
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: latest
 
-      # 5. Load Docker image into kind
+      # 6. Load Docker image into kind
       - name: Load Docker image into kind
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
-
-      # 6. Adjust deployment replicas for CI/CD (optional)
-      - name: Set replicas to 1 for CI/CD
-        run: |
-          kubectl scale deployment gpt-huggingface --replicas=1 || true
 
       # 7. Deploy app
       - name: Deploy app to kind
@@ -64,9 +63,9 @@ jobs:
           PF_PID=$!
           echo "Port-forward PID: $PF_PID"
 
-          # Wait until service responds
+          # Wait until service responds (timeout ~2 min)
           echo "Waiting for FastAPI service..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             if curl -s http://localhost:8000/ > /dev/null; then
               echo "Service is up!"
               break
@@ -94,12 +93,12 @@ jobs:
       - name: Run kube-score
         run: kube-score score --output-format ci deployment.yaml
 
-      # 12. Cleanup kind cluster (optional)
+      # 12. Cleanup kind cluster (always)
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci
 
-      # 13. Debug pod logs if failure
+      # 13. Debug pod logs on failure
       - name: Show pod logs on failure
         if: failure()
         run: |
