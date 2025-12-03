@@ -28,7 +28,7 @@ jobs:
       - name: Start kind cluster
         run: kind create cluster --name github-ci
 
-      # 4. Set KUBECONFIG for kubectl
+      # 4. Set KUBECONFIG for kubectl (before any kubectl commands)
       - name: Set kubeconfig
         run: echo "KUBECONFIG=$(kind get kubeconfig-path --name='github-ci')" >> $GITHUB_ENV
 
@@ -50,10 +50,10 @@ jobs:
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-      # 8. Wait for pods to be ready
+      # 8. Wait for pods to be ready (increase timeout for heavy app)
       - name: Wait for pod readiness
         run: |
-          kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
       # 9. Port-forward and test API
       - name: Port-forward and test API
@@ -63,9 +63,9 @@ jobs:
           PF_PID=$!
           echo "Port-forward PID: $PF_PID"
 
-          # Wait until service responds (timeout ~2 min)
+          # Wait until service responds (timeout ~5 min)
           echo "Waiting for FastAPI service..."
-          for i in {1..60}; do
+          for i in {1..150}; do
             if curl -s http://localhost:8000/ > /dev/null; then
               echo "Service is up!"
               break
@@ -74,7 +74,7 @@ jobs:
             sleep 2
           done
 
-          # Test API endpoint with question + answer
+          # Test API endpoint
           curl --fail -X POST http://localhost:8000/chat \
             -H "Content-Type: application/json" \
             -d '{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'
@@ -102,5 +102,5 @@ jobs:
       - name: Show pod logs on failure
         if: failure()
         run: |
-          kubectl get pods
-          kubectl logs -l app=gpt-hf-pod
+          kubectl get pods -l app=gpt-hf-pod -o wide
+          kubectl logs -l app=gpt-hf-pod --all-containers=true || true
