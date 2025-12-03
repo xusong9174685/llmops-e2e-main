@@ -1,0 +1,79 @@
+name: Deploy to kind and Test
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Docker Image CI"]
+    types: [completed]
+
+jobs:
+  deploy-and-test:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1. Install kind
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      # 2. Start a kind cluster
+      - name: Start kind cluster
+        run: kind create cluster --name github-ci
+
+      # 3. Install kubectl
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: latest
+
+      # 4. Load Docker image into kind
+      - name: Load Docker image into kind
+        run: |
+          docker pull xusonglin/fastapi-app:latest
+          kind load docker-image xusonglin/fastapi-app:latest --name github-ci
+
+      # 5. Deploy your app
+      - name: Deploy app
+        run: |
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+      # 6. Wait for deployment rollout
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/gpt-hf-deployment --timeout=120s
+
+      # 7. Port-forward and test API
+      - name: Port-forward and curl test
+        run: |
+          # Run port-forward in background
+          kubectl port-forward svc/gpt-hf-service 8000:8000 &
+          PF_PID=$!
+          echo "Port-forward PID: $PF_PID"
+
+          # Give it a few seconds to start
+          sleep 5
+
+          # Test API
+          curl -X POST http://localhost:8000/chat \
+            -H "Content-Type: application/json" \
+            -d '{"question": "What does Hugging Face provide?"}'
+
+          # Kill port-forward process
+          kill $PF_PID
+
+      # 8. Install kube-score
+      - name: Install kube-score
+        run: |
+          curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
+          tar -xzf kube-score.tar.gz kube-score
+          sudo mv kube-score /usr/local/bin/
+
+      # 9. Run kube-score
+      - name: Run kube-score
+        run: kube-score score --output-format ci k8s/deployment.yaml
