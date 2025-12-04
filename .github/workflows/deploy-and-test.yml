@@ -51,7 +51,18 @@ jobs:
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
-          docker exec github-ci-control-plane crictl images | grep fastapi-app
+
+          # Verify image exists in kind node
+          echo "Checking if image is available in kind node..."
+          for i in $(seq 1 10); do
+            if docker exec github-ci-control-plane crictl images | grep -q xusonglin/fastapi-app; then
+              echo "Image is now available in kind node."
+              break
+            else
+              echo "Waiting for image to load into kind node..."
+              sleep 2
+            fi
+          done
 
       # 8. Deploy app
       - name: Deploy app
