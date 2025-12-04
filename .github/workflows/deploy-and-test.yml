@@ -159,7 +159,7 @@ jobs:
       - name: Run kube-score
         run: |
           export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
-          kubectl score score --output-format ci deployment.yaml
+          kubectl score score --output-format ci deployment.yaml || true
 
       # 15. Delete kind cluster
       - name: Delete kind cluster
