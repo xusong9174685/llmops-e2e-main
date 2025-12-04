@@ -100,28 +100,25 @@ jobs:
       # 12. Test API inside cluster (simplified, logs visible)
       - name: Test API inside cluster
         run: |
-          # Run a temporary pod to call the service
-          kubectl run tester --restart=Never --image=curlimages/curl:7.90.0 --command -- /bin/sh -c '
-            for i in $(seq 1 60); do
-              RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
-                -H "Content-Type: application/json" \
-                -d "{\"question\":\"What does Hugging Face provide?\", \"context\":\"Hugging Face is a technology company that provides open-source NLP libraries ...\"}")
-              if [ "$RESPONSE" = "200" ]; then
-                echo "Service is responsive! Response:"
-                cat /tmp/response.json
-                exit 0
-              else
-                echo "Waiting for /chat endpoint (attempt $i)... HTTP $RESPONSE"
-                sleep 5
-              fi
-            done
-            echo "Timed out."
-            exit 1
-          '
-          # Show pod logs
-          kubectl logs tester || true
-          # Cleanup pod
-          kubectl delete pod tester --force --grace-period=0 || true
+          # Find the pod name dynamically
+          POD_NAME=$(kubectl get pod -l app=gpt-hf-pod -o jsonpath='{.items[0].metadata.name}')
+          echo "Using pod: $POD_NAME"
+
+          # Retry loop for API
+          for i in $(seq 1 60); do
+            RESPONSE=$(kubectl exec "$POD_NAME" -- curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
+              -H "Content-Type: application/json" \
+              -d '{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}')
+
+            if [ "$RESPONSE" = "200" ]; then
+              echo "Service is responsive! Response:"
+              kubectl exec "$POD_NAME" -- cat /tmp/response.json
+              break
+            else
+              echo "Waiting for /chat endpoint (attempt $i)... HTTP $RESPONSE"
+              sleep 5
+            fi
+          done
 
       # 13. Install Krew and kube-score
       - name: Install Krew and kube-score
