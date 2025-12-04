@@ -73,19 +73,19 @@ jobs:
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
-            --image=curlimages/curl --command -- sh -c "
-              for i in {1..60}; do
-                if curl -s http://gpt-hf-service:8000/chat \
-                  -H 'Content-Type: application/json' \
-                  -d '{\"question\": \"What does Hugging Face provide?\", \"context\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}' > /dev/null; then
-                  echo 'Service is responsive!'
-                  break
+            --image=curlimages/curl -- /bin/sh -c '
+              for i in $(seq 1 60); do
+                if curl -s -X POST http://gpt-hf-service:8000/chat \
+                  -H "Content-Type: application/json" \
+                  -d '"'"'{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides pen-source NLP libraries ..."}'"'"' > /dev/null; then
+                    echo "Service is responsive!"
+                    break
                 else
-                  echo 'Waiting for service...'
-                  sleep 5
+                    echo "Waiting for service..."
+                    sleep 5
                 fi
               done
-            "
+            '
 
       # 12. Install kube-score
       - name: Install kube-score
