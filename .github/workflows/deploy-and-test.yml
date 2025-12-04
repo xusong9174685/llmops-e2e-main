@@ -102,8 +102,8 @@ jobs:
       # 12. Test API inside cluster with retry loop (pretty-printed JSON)
       - name: Test API inside cluster
         run: |
-          # 1. Run the curl pod (non-interactive)
-          kubectl run tester --rm --restart=Never \
+          # Create the pod
+          kubectl run tester --restart=Never \
             --image=curlimages/curl -- /bin/sh -c '
               for i in $(seq 1 60); do
                 RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
@@ -124,8 +124,16 @@ jobs:
               exit 1
             '
 
-          # 2. Print all logs from the pod (stdout)
+          # Wait for pod to complete (success or fail)
+          kubectl wait --for=condition=Succeeded pod/tester --timeout=90s || \
+          kubectl wait --for=condition=Failed pod/tester --timeout=90s || true
+
+          # Show logs
+          echo "===== POD LOGS ====="
           kubectl logs tester || true
+
+          # Cleanup pod
+          kubectl delete pod tester --force --grace-period=0 || true
 
       # 13. Install kube-score
       - name: Install kube-score
