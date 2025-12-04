@@ -57,6 +57,9 @@ jobs:
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
+      - name: Show pod logs
+        run: kubectl logs -l app=gpt-hf-pod --all-containers
+
       # 9. Wait for pods to be ready
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
@@ -65,9 +68,13 @@ jobs:
       - name: Show pods and services
         run: |
           echo "--- Pods ---"
-          kubectl get pods -l app=gpt-hf-pod -o wide
+          kubectl get pods -o wide
           echo "--- Services ---"
-          kubectl get svc gpt-hf-service -o wide
+          kubectl get svc -o wide
+          echo "--- Describe Service ---"
+          kubectl describe svc gpt-hf-service || true
+          echo "--- Describe Pods ---"
+          kubectl describe pods -l app=gpt-hf-pod || true
 
       # 11. Test API inside cluster with retry loop
       - name: Test API inside cluster
