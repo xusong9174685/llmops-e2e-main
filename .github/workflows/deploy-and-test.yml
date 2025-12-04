@@ -51,6 +51,17 @@ jobs:
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
+      - name: Debug services and pods
+        run: |
+          echo "--- Pods ---"
+          kubectl get pods -o wide
+          echo "--- Services ---"
+          kubectl get svc -o wide
+          echo "--- Describe Service ---"
+          kubectl describe svc gpt-hf-service || true
+          echo "--- Describe Pods ---"
+          kubectl describe pods -l app=gpt-hf-pod || true
+
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
@@ -58,7 +69,7 @@ jobs:
             --command -- \
             curl -s -X POST http://gpt-hf-service:8000/chat \
               -H "Content-Type: application/json" \
-              -d "{\"question\": \"What does Hugging Face provides?\", \"answer\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}"
+              -d "{\"question\": \"What does Hugging Face provides?\", \"context\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}"
 
       - name: Install kube-score
         run: |
@@ -72,9 +83,3 @@ jobs:
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci
-
-      - name: Show pod logs on failure
-        if: failure()
-        run: |
-          kubectl get pods -l app=gpt-hf-pod -o wide
-          kubectl logs -l app=gpt-hf-pod --all-containers=true || true
