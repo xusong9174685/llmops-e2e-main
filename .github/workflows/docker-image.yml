@@ -36,14 +36,19 @@ jobs:
           MAX_ATTEMPTS=30
           SLEEP_INTERVAL=2
           SUCCESS=false
+          RESPONSE_BODY=""
           
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/chat \
+            # Get full response body instead of just HTTP code
+            RESPONSE_BODY=$(curl -s -X POST http://localhost:8000/chat \
               -H "Content-Type: application/json" \
               -d '{"question": "What does Hugging Face provide?", "context": "Hugging Face is a technology company that provides open-source NLP libraries ..."}' || true)
           
-            if [ "$RESPONSE" -eq 200 ]; then
+            # Check if the response contains a valid JSON "answer"
+            if echo "$RESPONSE_BODY" | grep -q '"answer"'; then
               echo "FastAPI container is up and responding!"
+              echo "Response:"
+              echo "$RESPONSE_BODY" | jq .
               SUCCESS=true
               break
             else
@@ -61,7 +66,7 @@ jobs:
           fi
           
           docker stop test-fastapi-app
-          docker rm test-fastapi-app
+          docker rm test-fastapi-app      
 
       # 5. Tag and push to Docker Hub
       - name: Push Docker image to Docker Hub

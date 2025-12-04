@@ -99,30 +99,35 @@ jobs:
           echo "--- Describe Pods ---"
           kubectl describe pods -l app=gpt-hf-pod || true
 
-      # 12. Test API inside cluster with retry loop
+      # 12. Test API inside cluster with retry loop (pretty-printed JSON)
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
             --image=curlimages/curl -- /bin/sh -c '
+              # install jq for pretty-printing
+              apk add --no-cache jq
+          
               for i in $(seq 1 60); do
-                RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
+                # Save response body to file and get HTTP code
+                RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
                   -H "Content-Type: application/json" \
                   -d '\''{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}'\'')
-                if [ "$RESPONSE" -eq 200 ]; then
+          
+                if [ "$RESPONSE_CODE" -eq 200 ]; then
                   echo "Service is responsive! Response:"
-                  cat /tmp/response.json
+                  cat /tmp/response.json | jq .
                   break
                 else
-                  echo "Waiting for /chat endpoint (attempt $i)..."
+                  echo "Waiting for /chat endpoint (attempt $i)... HTTP status: $RESPONSE_CODE"
                   sleep 5
                 fi
               done
-            '
+            '      
 
       # 13. Install kube-score
       - name: Install kube-score
         run: |
-          curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
+          curl -sLo kube-score.tar.gz -L https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
           tar -xzf kube-score.tar.gz kube-score
           sudo mv kube-score /usr/local/bin/
 
