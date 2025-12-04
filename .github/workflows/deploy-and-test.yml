@@ -102,20 +102,15 @@ jobs:
       # 12. Test API inside cluster with retry loop (pretty-printed JSON)
       - name: Test API inside cluster
         run: |
-          kubectl run tester --rm -i -t --restart=Never \
-            --image=curlimages/curl -- /bin/sh -c '
+          kubectl run tester --rm -i --restart=Never \
+            --image=curlimages/curl:7.90.0 -- /bin/sh -c '
               set -e -x
-          
-              # Update package index and install jq for pretty-printing
-              apk update
-              apk add --no-cache jq
-          
+
               for i in $(seq 1 60); do
-                # Save response body to file and get HTTP code
                 RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
                   -H "Content-Type: application/json" \
                   -d '\''{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}'\'')
-          
+
                 if [ "$RESPONSE_CODE" -eq 200 ]; then
                   echo "Service is responsive! Response:"
                   cat /tmp/response.json | jq .
@@ -125,7 +120,7 @@ jobs:
                   sleep 5
                 fi
               done
-            '      
+            '
 
       # 13. Install kube-score
       - name: Install kube-score

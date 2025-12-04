@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies into standard site-packages (no --prefix)
-RUN pip install --no-cache-dir torch==2.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+RUN pip install --no-cache-dir torch==2.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
