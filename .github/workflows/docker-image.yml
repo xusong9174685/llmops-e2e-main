@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
+concurrency:
+  group: docker-build-main
+
 jobs:
   build-test-push:
     runs-on: ubuntu-latest
