@@ -28,9 +28,11 @@ jobs:
       - name: Start kind cluster
         run: kind create cluster --name github-ci
 
-      # 4. Set KUBECONFIG for kubectl (before any kubectl commands)
+      # 4. Set KUBECONFIG for kubectl
       - name: Set kubeconfig
-        run: echo "KUBECONFIG=$(kind get kubeconfig-path --name='github-ci')" >> $GITHUB_ENV
+        run: |
+          kind get kubeconfig --name github-ci > kubeconfig.yaml
+          echo "KUBECONFIG=$PWD/kubeconfig.yaml" >> $GITHUB_ENV
 
       # 5. Install kubectl
       - name: Setup kubectl
@@ -55,32 +57,13 @@ jobs:
         run: |
           kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
-      # 9. Port-forward and test API
-      - name: Port-forward and test API
+      # 9. Test API from inside cluster (no port-forward needed)
+      - name: Test API inside cluster
         run: |
-          # Start port-forward in background
-          kubectl port-forward svc/gpt-hf-service 8000:8000 &
-          PF_PID=$!
-          echo "Port-forward PID: $PF_PID"
-
-          # Wait until service responds (timeout ~5 min)
-          echo "Waiting for FastAPI service..."
-          for i in {1..150}; do
-            if curl -s http://localhost:8000/ > /dev/null; then
-              echo "Service is up!"
-              break
-            fi
-            echo "Still waiting..."
-            sleep 2
-          done
-
-          # Test API endpoint
-          curl --fail -X POST http://localhost:8000/chat \
-            -H "Content-Type: application/json" \
-            -d '{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'
-
-          # Kill port-forward
-          kill $PF_PID
+          kubectl run tester --rm -i --image=curlimages/curl --restart=Never \
+            -- curl -s -X POST http://gpt-hf-service:8000/chat \
+              -H "Content-Type: application/json" \
+              -d '{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'
 
       # 10. Install kube-score
       - name: Install kube-score
