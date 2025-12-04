@@ -22,11 +22,14 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       # Trivy scan directly on Docker Hub image (remote scan)
-      - name: Trivy remote scan
+      - name: Trivy scan
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          image-ref: "xusonglin/fastapi-app:latest"
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
+          image-ref: xusonglin/fastapi-app:latest
+          scan-type: image
           format: table
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
+          scanners: vuln
           timeout: 600s

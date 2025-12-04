@@ -102,9 +102,12 @@ jobs:
       # 12. Test API inside cluster with retry loop (pretty-printed JSON)
       - name: Test API inside cluster
         run: |
-          kubectl run tester --rm -i --restart=Never \
+          kubectl run tester --rm -i -t --restart=Never \
             --image=curlimages/curl -- /bin/sh -c '
-              # install jq for pretty-printing
+              set -e -x
+          
+              # Update package index and install jq for pretty-printing
+              apk update
               apk add --no-cache jq
           
               for i in $(seq 1 60); do
@@ -127,9 +130,20 @@ jobs:
       # 13. Install kube-score
       - name: Install kube-score
         run: |
-          curl -sLo kube-score.tar.gz -L https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
+          # Download and follow redirects
+          curl -L -o kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
+          
+          # Verify the file is a gzip archive
+          file kube-score.tar.gz
+          
+          # Extract the binary
           tar -xzf kube-score.tar.gz kube-score
+          
+          # Move to /usr/local/bin
           sudo mv kube-score /usr/local/bin/
+          
+          # Verify installation
+          kube-score version      
 
       # 14. Run kube-score
       - name: Run kube-score
