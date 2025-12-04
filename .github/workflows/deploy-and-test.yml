@@ -15,7 +15,7 @@ jobs:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig.yaml
 
     steps:
-      # 1. Checkout repo
+      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -40,10 +40,11 @@ jobs:
         with:
           version: latest
 
-      # 6. Wait for node to be ready
+      # 6. Wait for node to be ready (increase timeout)
       - name: Wait for node to be ready
         run: |
-          kubectl wait --for=condition=Ready node/github-ci-control-plane --timeout=120s
+          echo "Waiting for control-plane node to be Ready..."
+          kubectl wait --for=condition=Ready node/github-ci-control-plane --timeout=240s
 
       # 7. Load Docker image into kind
       - name: Load Docker image into kind
@@ -51,32 +52,45 @@ jobs:
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
 
-      # 8. Deploy app with readiness probe
+      # 8. Deploy app
       - name: Deploy app
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-      - name: Show pod logs
-        run: kubectl logs -l app=gpt-hf-pod --all-containers
+      # 9. Wait for pod to move out of ContainerCreating
+      - name: Wait for pod to be scheduled
+        run: |
+          echo "Waiting for pod to start..."
+          for i in {1..60}; do
+            POD_STATUS=$(kubectl get pod -l app=gpt-hf-pod -o jsonpath='{.items[0].status.phase}')
+            echo "Pod status: $POD_STATUS"
+            if [[ "$POD_STATUS" == "Running" ]]; then
+              break
+            fi
+            sleep 5
+          done
 
-      # 9. Wait for pods to be ready
+      - name: Get logs
+        run: kubectl logs -l app=gpt-hf-pod --all-containers || true
+
+      # 10. Wait for pod readiness (checks readiness probe)
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
-      # 10. Debug services and pods
+      # 11. Debug services and pods
       - name: Show pods and services
         run: |
           echo "--- Pods ---"
-          kubectl get pods -o wide
+          kubectl get pods -l app=gpt-hf-pod -o wide
           echo "--- Services ---"
-          kubectl get svc -o wide
+          kubectl get svc gpt-hf-service -o wide
           echo "--- Describe Service ---"
           kubectl describe svc gpt-hf-service || true
           echo "--- Describe Pods ---"
           kubectl describe pods -l app=gpt-hf-pod || true
 
-      # 11. Test API inside cluster with retry loop
+      # 12. Test API inside cluster with retry loop
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
@@ -95,18 +109,18 @@ jobs:
               done
             '
 
-      # 12. Install kube-score
+      # 13. Install kube-score
       - name: Install kube-score
         run: |
           curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
           tar -xzf kube-score.tar.gz kube-score
           sudo mv kube-score /usr/local/bin/
 
-      # 13. Run kube-score
+      # 14. Run kube-score
       - name: Run kube-score
         run: kube-score score --output-format ci deployment.yaml
 
-      # 14. Delete kind cluster
+      # 15. Delete kind cluster
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci
