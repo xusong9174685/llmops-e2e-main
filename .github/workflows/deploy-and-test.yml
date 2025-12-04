@@ -83,9 +83,6 @@ jobs:
             sleep 5
           done
 
-      - name: Get logs
-        run: kubectl logs -l app=gpt-hf-pod --all-containers || true
-
       # 10. Wait for pod readiness (checks readiness probe)
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
@@ -108,14 +105,15 @@ jobs:
           kubectl run tester --rm -i --restart=Never \
             --image=curlimages/curl -- /bin/sh -c '
               for i in $(seq 1 60); do
-                RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://gpt-hf-service:8000/chat \
+                RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
                   -H "Content-Type: application/json" \
-                  -d '\''{"question": "What does Hugging Face provide?", "context": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'\'')
+                  -d '\''{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}'\'')
                 if [ "$RESPONSE" -eq 200 ]; then
-                  echo "Service is responsive!"
+                  echo "Service is responsive! Response:"
+                  cat /tmp/response.json
                   break
                 else
-                  echo "Waiting for service (attempt $i)..."
+                  echo "Waiting for /chat endpoint (attempt $i)..."
                   sleep 5
                 fi
               done

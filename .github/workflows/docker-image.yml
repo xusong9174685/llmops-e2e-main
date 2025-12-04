@@ -33,18 +33,21 @@ jobs:
       run: |
         docker run -d --name test-fastapi-app -p 8000:8000 fastapi-app
         for i in {1..10}; do
-          if curl -s http://localhost:8000/; then
-            echo "App is up!"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/chat \
+            -H "Content-Type: application/json" \
+            -d '{"question": "What does Hugging Face provide?", "context": "Hugging Face is a technology company that provides open-source NLP libraries ..."}')
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "FastAPI container is up and responding!"
             break
           else
-            echo "Waiting for FastAPI..."
+            echo "Waiting for FastAPI... (attempt $i)"
             sleep 2
           fi
         done
         docker stop test-fastapi-app
-        docker rm test-fastapi-app
+        docker rm test-fastapi-app      
 
-    # 5. Tag and push to Docker Hub
+      # 5. Tag and push to Docker Hub
     - name: Push Docker image to Docker Hub
       run: |
         docker tag fastapi-app:latest xusonglin/fastapi-app:latest
