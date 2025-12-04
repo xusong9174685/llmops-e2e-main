@@ -18,7 +18,11 @@ class ChatRequest(BaseModel):
      
 class ChatResponse(BaseModel): 
     answer: str
-    
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # Creating the /chat endpoint
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):

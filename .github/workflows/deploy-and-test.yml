@@ -51,7 +51,7 @@ jobs:
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
 
-      # 8. Deploy app
+      # 8. Deploy app with readiness probe
       - name: Deploy app
         run: |
           kubectl apply -f deployment.yaml
@@ -61,7 +61,7 @@ jobs:
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
-      # 10. Debug services and pods (optional but helpful)
+      # 10. Debug services and pods
       - name: Show pods and services
         run: |
           echo "--- Pods ---"
@@ -69,20 +69,21 @@ jobs:
           echo "--- Services ---"
           kubectl get svc gpt-hf-service -o wide
 
-      # 11. Test API inside cluster (no port-forward needed)
+      # 11. Test API inside cluster with retry loop
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
             --image=curlimages/curl -- /bin/sh -c '
               for i in $(seq 1 60); do
-                if curl -s -X POST http://gpt-hf-service:8000/chat \
+                RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://gpt-hf-service:8000/chat \
                   -H "Content-Type: application/json" \
-                  -d '"'"'{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides pen-source NLP libraries ..."}'"'"' > /dev/null; then
-                    echo "Service is responsive!"
-                    break
+                  -d '\''{"question": "What does Hugging Face provide?", "context": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'\'')
+                if [ "$RESPONSE" -eq 200 ]; then
+                  echo "Service is responsive!"
+                  break
                 else
-                    echo "Waiting for service..."
-                    sleep 5
+                  echo "Waiting for service (attempt $i)..."
+                  sleep 5
                 fi
               done
             '
