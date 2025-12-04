@@ -3,30 +3,28 @@
 # -----------------------------
 FROM python:3.11-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy only requirements.txt first to leverage Docker cache
+# Copy requirements.txt first
 COPY requirements.txt .
 
-# Install torch CPU-only first
-RUN pip install --no-cache-dir torch==2.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html --prefix=/install
+# Install dependencies into standard site-packages (no --prefix)
+RUN pip install --no-cache-dir torch==2.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Then install the rest of the requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
-# Copy application code
+# Copy app code
 COPY . .
 
 # -----------------------------
 # Stage 2: Runtime
 # -----------------------------
-FROM gcr.io/distroless/python3:nonroot
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY --from=builder /install /usr/local
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /app /app
 
-CMD ["day02.py"]
+# Run app
+CMD ["python", "day02.py"]
