@@ -40,9 +40,10 @@ jobs:
         with:
           version: latest
 
-      # 6. Verify cluster access
-      - name: Verify cluster access
-        run: kubectl get nodes
+      # 6. Wait for node to be ready
+      - name: Wait for node to be ready
+        run: |
+          kubectl wait --for=condition=Ready node/github-ci-control-plane --timeout=120s
 
       # 7. Load Docker image into kind
       - name: Load Docker image into kind
@@ -72,11 +73,19 @@ jobs:
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
-            --image=curlimages/curl \
-            --command -- \
-            sh -c 'curl -s -X POST http://gpt-hf-service:8000/chat \
-              -H "Content-Type: application/json" \
-              -d "{\"question\": \"What does Hugging Face provide?\", \"context\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}"'
+            --image=curlimages/curl --command -- sh -c "
+              for i in {1..60}; do
+                if curl -s http://gpt-hf-service:8000/chat \
+                  -H 'Content-Type: application/json' \
+                  -d '{\"question\": \"What does Hugging Face provide?\", \"context\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}' > /dev/null; then
+                  echo 'Service is responsive!'
+                  break
+                else
+                  echo 'Waiting for service...'
+                  sleep 5
+                fi
+              done
+            "
 
       # 12. Install kube-score
       - name: Install kube-score
