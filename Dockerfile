@@ -11,7 +11,7 @@ RUN pip install --upgrade pip
 # Copy requirements first for caching
 COPY requirements.txt .
 
-# Install PyTorch CPU 2.6.0 and other dependencies
+# Install PyTorch CPU 2.6.0 and app dependencies
 RUN pip install --no-cache-dir torch==2.6.0 -f https://download.pytorch.org/whl/torch_stable.html \
     && pip install --no-cache-dir -r requirements.txt
 
@@ -25,12 +25,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy installed Python packages from builder
+# Copy installed packages + binaries (important!)
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy app code
 COPY --from=builder /app /app
 
 # Expose port for FastAPI
 EXPOSE 8000
 
-# Run the app using uvicorn for production
+# Start API
 CMD ["uvicorn", "day02:app", "--host", "0.0.0.0", "--port", "8000"]
