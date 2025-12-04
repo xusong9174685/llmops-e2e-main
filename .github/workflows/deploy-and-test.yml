@@ -51,6 +51,7 @@ jobs:
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
+          docker exec github-ci-control-plane crictl images | grep fastapi-app
 
       # 8. Deploy app
       - name: Deploy app
