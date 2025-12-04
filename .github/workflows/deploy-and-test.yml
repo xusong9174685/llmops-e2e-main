@@ -15,71 +15,81 @@ jobs:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig.yaml
 
     steps:
+      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2. Install kind
       - name: Install kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
+      # 3. Start kind cluster
       - name: Start kind cluster
         run: kind create cluster --name github-ci
 
+      # 4. Export kubeconfig
       - name: Export kubeconfig
         run: kind get kubeconfig --name github-ci > $KUBECONFIG
 
-      - name: Install kubectl
+      # 5. Install kubectl
+      - name: Setup kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: latest
 
+      # 6. Verify cluster access
       - name: Verify cluster access
         run: kubectl get nodes
 
+      # 7. Load Docker image into kind
       - name: Load Docker image into kind
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
 
+      # 8. Deploy app
       - name: Deploy app
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
+      # 9. Wait for pods to be ready
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
-      - name: Debug services and pods
+      # 10. Debug services and pods (optional but helpful)
+      - name: Show pods and services
         run: |
           echo "--- Pods ---"
-          kubectl get pods -o wide
+          kubectl get pods -l app=gpt-hf-pod -o wide
           echo "--- Services ---"
-          kubectl get svc -o wide
-          echo "--- Describe Service ---"
-          kubectl describe svc gpt-hf-service || true
-          echo "--- Describe Pods ---"
-          kubectl describe pods -l app=gpt-hf-pod || true
+          kubectl get svc gpt-hf-service -o wide
 
+      # 11. Test API inside cluster (no port-forward needed)
       - name: Test API inside cluster
         run: |
           kubectl run tester --rm -i --restart=Never \
             --image=curlimages/curl \
             --command -- \
-            curl -s -X POST http://gpt-hf-service:8000/chat \
+            sh -c 'curl -s -X POST http://gpt-hf-service:8000/chat \
               -H "Content-Type: application/json" \
-              -d "{\"question\": \"What does Hugging Face provides?\", \"context\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}"
+              -d "{\"question\": \"What does Hugging Face provide?\", \"context\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}"'
 
+      # 12. Install kube-score
       - name: Install kube-score
         run: |
           curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
           tar -xzf kube-score.tar.gz kube-score
           sudo mv kube-score /usr/local/bin/
 
+      # 13. Run kube-score
       - name: Run kube-score
         run: kube-score score --output-format ci deployment.yaml
 
+      # 14. Delete kind cluster
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci
