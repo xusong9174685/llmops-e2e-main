@@ -102,25 +102,34 @@ jobs:
       # 12. Test API inside cluster with retry loop (pretty-printed JSON)
       - name: Test API inside cluster
         run: |
-          kubectl run tester --rm -i --restart=Never \
-            --image=curlimages/curl:7.90.0 -- /bin/sh -c '
-              set -e -x
+          # Run a curl pod to hit your internal service
+          kubectl run tester --restart=Never --image=curlimages/curl:7.90.0 \
+            -- /bin/sh -c '
+              set -e
 
               for i in $(seq 1 60); do
-                RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
+                CODE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
                   -H "Content-Type: application/json" \
-                  -d '\''{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}'\'')
+                  -d "{\"question\":\"What does Hugging Face provide?\",\"context\":\"Hugging Face is a technology company...\"}")
 
-                if [ "$RESPONSE_CODE" -eq 200 ]; then
-                  echo "Service is responsive! Response:"
-                  cat /tmp/response.json | jq .
-                  break
-                else
-                  echo "Waiting for /chat endpoint (attempt $i)... HTTP status: $RESPONSE_CODE"
-                  sleep 5
+                if [ "$CODE" = "200" ]; then
+                  echo "Service OK"
+                  cat /tmp/response.json
+                  exit 0
                 fi
+
+                echo "Retry $i.. Status: $CODE"
+                sleep 5
               done
+
+              echo "Service did not respond successfully."
+              exit 1
             '
+
+          # Wait for pod to complete or fail
+          kubectl wait --for=condition=Succeeded pod/tester --timeout=120s || true
+          kubectl logs tester || true
+          kubectl delete pod tester --force --grace-period=0 || true
 
       # 13. Install kube-score
       - name: Install kube-score
