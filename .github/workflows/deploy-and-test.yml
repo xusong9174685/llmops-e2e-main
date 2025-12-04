@@ -40,7 +40,7 @@ jobs:
         with:
           version: latest
 
-      # 6. Wait for node to be ready (increase timeout)
+      # 6. Wait for node to be ready
       - name: Wait for node to be ready
         run: |
           echo "Waiting for control-plane node to be Ready..."
@@ -51,15 +51,13 @@ jobs:
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
-
-          # Verify image exists in kind node
-          echo "Checking if image is available in kind node..."
+          echo "Verifying image is in kind node..."
           for i in $(seq 1 10); do
             if docker exec github-ci-control-plane crictl images | grep -q xusonglin/fastapi-app; then
               echo "Image is now available in kind node."
               break
             else
-              echo "Waiting for image to load into kind node..."
+              echo "Waiting for image to load..."
               sleep 2
             fi
           done
@@ -70,12 +68,12 @@ jobs:
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-      # 9. Wait for pod to move out of ContainerCreating
-      - name: Wait for pod to be scheduled
+      # 9. Wait for pod to be scheduled
+      - name: Wait for pod to start
         run: |
           echo "Waiting for pod to start..."
           for i in {1..60}; do
-            POD_STATUS=$(kubectl get pod -l app=gpt-hf-pod -o jsonpath='{.items[0].status.phase}')
+            POD_STATUS=$(kubectl get pod -l app=gpt-hf-pod -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Pending")
             echo "Pod status: $POD_STATUS"
             if [[ "$POD_STATUS" == "Running" ]]; then
               break
@@ -83,7 +81,7 @@ jobs:
             sleep 5
           done
 
-      # 10. Wait for pod readiness (checks readiness probe)
+      # 10. Wait for pod readiness
       - name: Wait for pod readiness
         run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
@@ -99,51 +97,54 @@ jobs:
           echo "--- Describe Pods ---"
           kubectl describe pods -l app=gpt-hf-pod || true
 
-      # 12. Test API inside cluster with retry loop (pretty-printed JSON)
+      # 12. Test API inside cluster (simplified, logs visible)
       - name: Test API inside cluster
         run: |
-          # Create the pod
-          kubectl run tester --restart=Never \
-            --image=curlimages/curl -- /bin/sh -c '
-              for i in $(seq 1 60); do
-                RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
-                  -H "Content-Type: application/json" \
-                  -d "{\"question\":\"What does Hugging Face provide?\", \"context\":\"Hugging Face is a technology company that provides open-source NLP libraries ...\"}")
-                if [ "$RESPONSE" = "200" ]; then
-                  echo "Service is responsive! Response:"
-                  cat /tmp/response.json
-                  exit 0
-                else
-                  echo "Waiting for /chat endpoint (attempt $i)... HTTP $RESPONSE"
-                  sleep 5
-                fi
-              done
-
-              echo "Timed out."
-              exit 1
-            '
-
-          # Allow pod to write logs
-          sleep 2
-
-          echo "===== POD LOGS ====="
+          # Run a temporary pod to call the service
+          kubectl run tester --restart=Never --image=curlimages/curl:7.90.0 --command -- /bin/sh -c '
+            for i in $(seq 1 60); do
+              RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
+                -H "Content-Type: application/json" \
+                -d "{\"question\":\"What does Hugging Face provide?\", \"context\":\"Hugging Face is a technology company that provides open-source NLP libraries ...\"}")
+              if [ "$RESPONSE" = "200" ]; then
+                echo "Service is responsive! Response:"
+                cat /tmp/response.json
+                exit 0
+              else
+                echo "Waiting for /chat endpoint (attempt $i)... HTTP $RESPONSE"
+                sleep 5
+              fi
+            done
+            echo "Timed out."
+            exit 1
+          '
+          # Show pod logs
           kubectl logs tester || true
-
+          # Cleanup pod
           kubectl delete pod tester --force --grace-period=0 || true
 
-      # 13. Install kube-score
-      - name: Install kube-score
+      # 13. Install Krew and kube-score
+      - name: Install Krew and kube-score
         run: |
-          curl -sSL --fail -o kube-score.tar.gz \
-            https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
-          file kube-score.tar.gz
-          tar -xzf kube-score.tar.gz
-          sudo mv kube-score /usr/local/bin/
+          set -e
+          (
+            cd "$(mktemp -d)" &&
+            OS="$(uname | tr '[:upper:]' '[:lower:]')" &&
+            ARCH="$(uname -m | sed 's/x86_64/amd64/' | sed 's/arm64/arm64/')" &&
+            curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/latest/download/krew.tar.gz" &&
+            tar zxvf krew.tar.gz &&
+            KREW=./krew-"$OS"_"$ARCH" &&
+            "$KREW" install krew
+          )
+          export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
+          kubectl krew install score || true
           kube-score version
 
       # 14. Run kube-score
       - name: Run kube-score
-        run: kube-score score --output-format ci deployment.yaml
+        run: |
+          export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
+          kube-score score --output-format ci deployment.yaml
 
       # 15. Delete kind cluster
       - name: Delete kind cluster
