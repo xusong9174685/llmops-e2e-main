@@ -1,6 +1,5 @@
 name: Deploy and Test on kind
 
-# Trigger manually or after Trivy Remote Scan completes
 on:
   workflow_dispatch:
   workflow_run:
@@ -12,76 +11,68 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
+    env:
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig.yaml
+
     steps:
-      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Install kind
       - name: Install kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
-      # 3. Start kind cluster
       - name: Start kind cluster
         run: kind create cluster --name github-ci
 
-      # 4. Set KUBECONFIG for kubectl
-      - name: Set kubeconfig
-        run: |
-          kind get kubeconfig --name github-ci > kubeconfig.yaml
-          echo "KUBECONFIG=$PWD/kubeconfig.yaml" >> $GITHUB_ENV
+      - name: Export kubeconfig
+        run: kind get kubeconfig --name github-ci > $KUBECONFIG
 
-      # 5. Install kubectl
-      - name: Setup kubectl
+      - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: latest
 
-      # 6. Load Docker image into kind
+      - name: Verify cluster access
+        run: kubectl get nodes
+
       - name: Load Docker image into kind
         run: |
           docker pull xusonglin/fastapi-app:latest
           kind load docker-image xusonglin/fastapi-app:latest --name github-ci
 
-      # 7. Deploy app
-      - name: Deploy app to kind
+      - name: Deploy app
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
-      # 8. Wait for pods to be ready (increase timeout for heavy app)
       - name: Wait for pod readiness
-        run: |
-          kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
+        run: kubectl wait --for=condition=ready pod -l app=gpt-hf-pod --timeout=600s
 
-      # 9. Test API from inside cluster (no port-forward needed)
       - name: Test API inside cluster
         run: |
-          kubectl run tester --rm -i --image=curlimages/curl --restart=Never \
-            -- curl -s -X POST http://gpt-hf-service:8000/chat \
+          kubectl run tester --rm -i --restart=Never \
+            --image=curlimages/curl \
+            --command -- \
+            curl -s -X POST http://gpt-hf-service:8000/chat \
               -H "Content-Type: application/json" \
-              -d '{"question": "What does Hugging Face provides?", "answer": "Hugging Face is a technology company that provides open-source NLP libraries ..."}'
+              -d "{\"question\": \"What does Hugging Face provides?\", \"answer\": \"Hugging Face is a technology company that provides open-source NLP libraries ...\"}"
 
-      # 10. Install kube-score
       - name: Install kube-score
         run: |
           curl -sLo kube-score.tar.gz https://github.com/zegl/kube-score/releases/download/v1.25.1/kube-score_1.25.1_linux_amd64.tar.gz
           tar -xzf kube-score.tar.gz kube-score
           sudo mv kube-score /usr/local/bin/
 
-      # 11. Run kube-score
       - name: Run kube-score
         run: kube-score score --output-format ci deployment.yaml
 
-      # 12. Cleanup kind cluster (always)
       - name: Delete kind cluster
         if: always()
         run: kind delete cluster --name github-ci
 
-      # 13. Debug pod logs on failure
       - name: Show pod logs on failure
         if: failure()
         run: |
