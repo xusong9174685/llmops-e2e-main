@@ -97,30 +97,37 @@ jobs:
           echo "--- Describe Pods ---"
           kubectl describe pods -l app=gpt-hf-pod || true
 
-      # 12. Test API inside cluster (simplified, logs visible)
+      # 12. Test API inside cluster (port-forward)
       - name: Test API inside cluster
         run: |
-          # Find the pod name dynamically
-          POD_NAME=$(kubectl get pod -l app=gpt-hf-pod -o jsonpath='{.items[0].metadata.name}')
-          echo "Using pod: $POD_NAME"
-
-          # Retry loop for API
+          SERVICE_NAME=gpt-hf-service
+          SERVICE_PORT=8000
+          
+          # Forward the service port in background
+          kubectl port-forward svc/$SERVICE_NAME $SERVICE_PORT:$SERVICE_PORT &
+          PF_PID=$!
+          echo "Port-forward PID: $PF_PID"
+          
+          # Retry loop
           for i in $(seq 1 60); do
-            RESPONSE=$(kubectl exec "$POD_NAME" -- curl -s -w "%{http_code}" -o /tmp/response.json -X POST http://gpt-hf-service:8000/chat \
-              -H "Content-Type: application/json" \
+            RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json http://localhost:$SERVICE_PORT/chat \
+              -X POST -H "Content-Type: application/json" \
               -d '{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}')
-
+          
             if [ "$RESPONSE" = "200" ]; then
               echo "Service is responsive! Response:"
-              kubectl exec "$POD_NAME" -- cat /tmp/response.json
+              cat /tmp/response.json
               break
             else
               echo "Waiting for /chat endpoint (attempt $i)... HTTP $RESPONSE"
               sleep 5
             fi
           done
+          
+          # Kill port-forward
+          kill $PF_PID      
 
-      # 13. Install Krew and kube-score
+        # 13. Install Krew and kube-score
       - name: Install Krew and kube-score
         run: |
           set -e
