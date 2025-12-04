@@ -98,22 +98,32 @@ jobs:
           kubectl describe pods -l app=gpt-hf-pod || true
 
       # 12. Test API inside cluster (port-forward)
-      - name: Test API inside cluster
+      - name: Test API inside cluster (port-forward)
         run: |
           SERVICE_NAME=gpt-hf-service
           SERVICE_PORT=8000
-          
+
           # Forward the service port in background
           kubectl port-forward svc/$SERVICE_NAME $SERVICE_PORT:$SERVICE_PORT &
           PF_PID=$!
           echo "Port-forward PID: $PF_PID"
-          
+
+          # Wait until port is listening
+          for i in {1..10}; do
+            if nc -z localhost $SERVICE_PORT; then
+              echo "Port $SERVICE_PORT is ready"
+              break
+            fi
+            echo "Waiting for port-forward to be ready..."
+            sleep 1
+          done
+
           # Retry loop
           for i in $(seq 1 60); do
             RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/response.json http://localhost:$SERVICE_PORT/chat \
               -X POST -H "Content-Type: application/json" \
               -d '{"question":"What does Hugging Face provide?", "context":"Hugging Face is a technology company that provides open-source NLP libraries ..."}')
-          
+
             if [ "$RESPONSE" = "200" ]; then
               echo "Service is responsive! Response:"
               cat /tmp/response.json
@@ -123,9 +133,9 @@ jobs:
               sleep 5
             fi
           done
-          
+
           # Kill port-forward
-          kill $PF_PID      
+          kill $PF_PID  
 
         # 13. Install Krew and kube-score
       - name: Install Krew and kube-score
